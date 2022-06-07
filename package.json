@@ -25,6 +25,7 @@
     "webpack-dev-server": "^3.1.5"
   },
   "dependencies": {
+    "crypto": "^1.0.1",
     "lightningdevkit": "^0.0.10-6.0beta1"
   }
 }
