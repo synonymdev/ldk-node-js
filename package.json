@@ -4,7 +4,10 @@
   "description": "Sandbox application for LDK",
   "main": "index.js",
   "scripts": {
+    "build-babel": "babel index.js -d dist",
+    "test": "node ./test.js",
     "build": "webpack --config webpack.config.js",
+    "start-node": "node ./node.js",
     "start": "webpack-dev-server"
   },
   "repository": {
@@ -19,14 +22,21 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@babel/cli": "^7.17.10",
+    "@babel/core": "^7.18.5",
+    "@babel/preset-env": "^7.18.2",
+    "babel-loader": "^8.2.5",
     "copy-webpack-plugin": "^5.0.0",
     "webpack": "^4.29.3",
     "webpack-cli": "^3.1.0",
     "webpack-dev-server": "^3.1.5"
   },
   "dependencies": {
+    "axios": "^0.27.2",
     "bitcoind-rpc": "^0.9.1",
     "crypto": "^1.0.1",
-    "lightningdevkit": "^0.0.10-6.0beta1"
+    "lightningdevkit": "^0.0.10-6.0beta1",
+    "socket.io": "^4.5.1",
+    "socket.io-client": "^4.5.1"
   }
 }
