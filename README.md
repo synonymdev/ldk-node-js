@@ -8,7 +8,7 @@ The sample LDK node is a sandboxing environment to repoduce the current [LDK-Sam
 
 # Configuration
 
-Copy and edit the .env_sample file to match you local environment. LN_REMOTE_HOST is provided for quick connection testing. Alternatively use connectpeer(pubkey@host:port) from the REPL.
+Copy and edit the .env_sample file to match your local environment. LN_REMOTE_HOST is provided for quick connection testing. Alternatively use connectpeer(pubkey@host:port) from the REPL.
 
 ```
 cp ./.env_sample ./.env
