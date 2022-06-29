@@ -15,7 +15,7 @@ npm run test
 ## Running Node REPL
 
 ```
-npm start-node
+npm run start-node
 ```
 
 ## Running Browser node
