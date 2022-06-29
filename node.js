@@ -7,7 +7,7 @@ const { connect_outbound, setup_inbound, setup_outbound } = require("./utils/ln_
 const { syncBuiltinESMExports } = require("module");
 const USER = 'user';
 const PASS = 'password';
-const HOST = "http://localhost:8080/bitcoin/"
+const HOST = "http://localhost:8010/"
 //const YourSocketDescriptor = require("./init/YourSocketDescriptor")
 
 
@@ -44,7 +44,9 @@ const rpcclient = async (method, params) => {
 			Accept: 'application/json',
 			'Content-Type': 'application/json'
 		}
-	});
+	}).catch((e) => {
+        console.log(e)
+    });
 
 	return res.data.result;
 };
@@ -70,14 +72,14 @@ async function start_ldk(ldk) {
     // Step 2: Initialize the Logger
     const logger = ldk.Logger.new_impl({
         log(record) {
-            console.log(record.get_module_path() + ": whoop " + record.get_args());
+            console.log(record.get_module_path() + ": " + record.get_args());
         }
     });
     
     // Step 3: Initialize the BroadcasterInterface
     var tx_broadcaster;
     const tx_broadcasted = new Promise((resolve, reject) => {
-        tx_broadcaster = ldk.BroadcasterInterface.new_impl({
+        tx_broadcaster = ldk.BroadcasterInterface.new_impl({ // Need to call the sendrawtransaction call for the RPC service, loggin this for now to determined when to implement
             broadcast_transaction(tx) { console.log("Tx Broadcast: " + tx); resolve(tx); }
         });
     });
@@ -210,7 +212,7 @@ async function start_ldk(ldk) {
     }
 
     local.context.connectpeer = function(peer) {
-        //var peer = "0374f296fbe03d451d9bd182ae7fc797a2432b112717b029607b4e3c623a9282f9@127.0.0.1:9735";
+        var peer = "03a8f5903fe4b1923e5fcb5adc801fac7cced2d1f7acc9b4346c32e76b5454893a@127.0.0.1:9735";
         let peerParts = peer.split("@");
         var config = {
             host: peerParts[1].split(":")[0],
@@ -223,16 +225,17 @@ async function start_ldk(ldk) {
         })
         
         client.on('data', function(chunk) {
+            console.log("bytes written", client.bytesWritten)
             console.log("we got data");
-            peer_manager.write_buffer_space_avail(socket);
-            peer_manager.read_event(socket, chunk)
-            //console.log(chunk);
+            if (peer_manager.write_buffer_space_avail(socket).is_ok()) {
+                console.log(peer_manager.read_event(socket, chunk).is_ok())
+                peer_manager.process_events();
+            }
         })
       
         client.on('end', function() {
             console.log('Requested an end to the TCP connection');
         });
-
         
         client.on('drain', function() {
             console.log("drain!");
@@ -242,9 +245,9 @@ async function start_ldk(ldk) {
             console.log("timeout!");
         });
         var socket = ldk.SocketDescriptor.new_impl({
-            send_data: (data) => {
-                console.log('Send data');
-                client.write(data);
+            send_data: (data, resume_read) => {
+                console.log('Send data',resume_read);
+                console.log(client.write(data));
             },
             disconnect_socket: () => {
                 console.log('Closing socket');
@@ -256,23 +259,52 @@ async function start_ldk(ldk) {
                 return true;
             },
             hash: () => {
-                console.log('Hash');
-                return crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
+                return crypto.createHash('sha256').update(Math.random().toString());
             }
         });
 
+        ldk
         client.connect(config, function() {
-            client.setTimeout(0);
+            client.setTimeout(10000);
             console.log('TCP connection established.');
+
             var address = ldk.NetAddress.constructor_ipv4(config.host.split("."),config.port);
-            var d = peer_manager.new_in
-            var m = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socket, address);
-            socket.send_data(m.res)
+            /*
+            var i = new Uint8Array(16)
+            i[0] = 0xfe;
+            i[1] = 0x80;
+            i[15] = 0x01;
+            var address = ldk.NetAddress.constructor_ipv6(new Uint8Array(16),config.port);
+            */
+            
+            var inbound = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socket, address);
+            
+            
+            
+            console.log(socket.send_data(inbound.res, true).length)
             
         });        
     }
-    //local.context.connectpeer();
-   
+    local.context.connectpeer();
+
+    
+    local.context.getinvoice = function(amt_msat,expiry_secs) {
+        /*
+        inbound_payments = 
+        channel_manager, 
+        keys_manager,
+        network = ldk.Network.LDKNetwork_Testnet;
+        create_invoice_from_channelmanager(
+            channel_manager,
+		    keys_manager,
+		    currency,
+		    amt_msat,
+		    "ldk-tutorial-node",
+		    expiry_secs
+        )*/
+        return channel_manager.create_inbound_payment(amt_msat,expiry_secs)
+
+    }
 
 }
 
@@ -287,6 +319,6 @@ import("lightningdevkit").then(ldk =>  {
             })
       };
       
-      compileWasm("node_modules/lightningdevkit/liblightningjs.wasm");
+      compileWasm("./node_modules/lightningdevkit/liblightningjs.wasm");
 })
 
