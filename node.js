@@ -221,7 +221,7 @@ async function start_ldk(ldk) {
         //console.log(config);
         const client = new net.Socket();
         client.on('error', function(chunk) {
-            console.log("we got and error");
+            console.log("we got an error");
         })
         
         client.on('data', function(chunk) {
@@ -245,9 +245,13 @@ async function start_ldk(ldk) {
             console.log("timeout!");
         });
         var socket = ldk.SocketDescriptor.new_impl({
-            send_data: (data, resume_read) => {
+            send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
                 console.log('Send data',resume_read);
                 console.log(client.write(data));
+                if (client.bytesWritten !== data.length) { 
+                    console.log("We had a writing issue")
+                }
+                return client.bytesWritten;
             },
             disconnect_socket: () => {
                 console.log('Closing socket');
