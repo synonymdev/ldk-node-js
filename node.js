@@ -206,11 +206,6 @@ async function start_ldk(ldk) {
         //ldk.util
     }
 
-    // Requires implementing rust-lightning-invoice https://github.com/rust-bitcoin/rust-lightning-invoice/
-    local.context.getinvoice = function() {
-
-    }
-
     local.context.connectpeer = function(peer) {
         let peerParts = peer.split("@");
         var config = {
@@ -294,7 +289,9 @@ async function start_ldk(ldk) {
     }
 
     
-    local.context.getinvoice = function(amt_msat,expiry_secs) {
+    // Requires implementing rust-lightning-invoice https://github.com/rust-bitcoin/rust-lightning-invoice/
+    local.context.getinvoice = function(amt_msat,expiry_secs) { 
+
         /*
         inbound_payments = 
         channel_manager, 
