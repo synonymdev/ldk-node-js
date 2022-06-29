@@ -1,15 +1,15 @@
 const fs = require("fs")
+const dotenv = require("dotenv").config();
+const dotenvexpand = require("dotenv-expand").expand(dotenv);
 const repl = require("repl");
 const crypto = require("crypto");
 const axios = require("axios");
 const net = require("net");
 const { connect_outbound, setup_inbound, setup_outbound } = require("./utils/ln_net");
 const { syncBuiltinESMExports } = require("module");
-const USER = 'user';
-const PASS = 'password';
-const HOST = "http://localhost:8010/"
-//const YourSocketDescriptor = require("./init/YourSocketDescriptor")
-
+const USER = process.env.BITCOIN_USER;
+const PASS = process.env.BITCOIN_PASS;
+const HOST = process.env.BITCOIN_CORS_RPC_URL;
 
 // ✅ Step 1: Initialize the FeeEstimator
 // ✅ Step 2: Initialize the Logger
@@ -212,7 +212,6 @@ async function start_ldk(ldk) {
     }
 
     local.context.connectpeer = function(peer) {
-        var peer = "03a8f5903fe4b1923e5fcb5adc801fac7cced2d1f7acc9b4346c32e76b5454893a@127.0.0.1:9735";
         let peerParts = peer.split("@");
         var config = {
             host: peerParts[1].split(":")[0],
@@ -245,6 +244,7 @@ async function start_ldk(ldk) {
             console.log("timeout!");
         });
         var socket = ldk.SocketDescriptor.new_impl({
+            id : crypto.createHash('sha256').update(Math.random().toString()),
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
                 console.log('Send data',resume_read);
                 console.log(client.write(data));
@@ -267,7 +267,6 @@ async function start_ldk(ldk) {
             }
         });
 
-        ldk
         client.connect(config, function() {
             client.setTimeout(10000);
             console.log('TCP connection established.');
@@ -289,7 +288,10 @@ async function start_ldk(ldk) {
             
         });        
     }
-    local.context.connectpeer();
+
+    if (process.env.LN_REMOTE_HOST) { // Automatically connect for debugging purposes
+        local.context.connectpeer(process.env.LN_REMOTE_HOST);
+    }
 
     
     local.context.getinvoice = function(amt_msat,expiry_secs) {

@@ -6,6 +6,14 @@ The sample LDK node is a sandboxing environment to repoduce the current [LDK-Sam
 1. cd ./ldk-node-js
 1. npm i
 
+# Configuration
+
+Copy and edit the .env_sample file to match you local environment. LN_REMOTE_HOST is provided for quick connection testing. Alternatively use connectpeer(pubkey@host:port) from the REPL.
+
+```
+cp ./.env_sample ./.env
+```
+
 ## Running Tests
 
 ```
