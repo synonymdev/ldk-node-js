@@ -103,6 +103,7 @@ async function start_ldk(ldk) {
     // Step 5: Initialize the ChainMonitor
     const chain_monitor = ldk.ChainMonitor.constructor_new(ldk.Option_FilterZ.constructor_none(), tx_broadcaster, logger, fee_est, persister);
     const chain_watch = chain_monitor.as_Watch();
+
     
     // Step 6: Initialize the KeysManager
     const keys_seed_path = ldk_data_dir + "keys_seed";
@@ -133,27 +134,25 @@ async function start_ldk(ldk) {
 
     let genesis_hash = await rpcclient("getblockhash",[0]);
     let network_graph = ldk.NetworkGraph.constructor_new(Buffer.from(genesis_hash, "hex"));
-    let net_graph_msg_handler = ldk.NetGraphMsgHandler.constructor_new(network_graph, new ldk.Option_AccessZ(), logger)
-    
+    let net_graph_msg_handler = ldk.MessageHandler.constructor_new(network_graph, new ldk.Option_AccessZ(), logger) // removed in the new bindings
     // ✅ Step 12: Initialize the PeerManager
-    
+
     let lightning_msg_handler = ldk.MessageHandler.constructor_new({
         chan_handler: channel_manager,
         route_handler: net_graph_msg_handler
     });
 
-    let ignoring_custom_msg_handler = ldk.IgnoringMessageHandler.constructor_new({})
     let ephemeral_bytes = crypto.randomBytes(32);
     var message_handler_chan_handler_arg = new ldk.ChannelMessageHandler.constructor()
-
+    const ignoring_custom_msg_handler = ldk.IgnoringMessageHandler.constructor_new();
 
     let peer_manager = ldk.PeerManager.constructor_new(
-        message_handler_chan_handler_arg,
-        lightning_msg_handler,
+        channel_manager.as_ChannelMessageHandler(),
+        ignoring_custom_msg_handler.as_RoutingMessageHandler(),
         keys_interface.get_node_secret().res,
         ephemeral_bytes,
         logger,
-        ignoring_custom_msg_handler
+        ignoring_custom_msg_handler.as_CustomMessageHandler()
     );
     // ## Running LDK
 	// Step 13: Initialize networking
@@ -222,7 +221,6 @@ async function start_ldk(ldk) {
             console.log("bytes written", client.bytesWritten)
             console.log("we got data");
             if (peer_manager.write_buffer_space_avail(socket).is_ok()) {
-                console.log(peer_manager.read_event(socket, chunk).is_ok())
                 peer_manager.process_events();
             }
         })
@@ -242,10 +240,7 @@ async function start_ldk(ldk) {
             id : crypto.createHash('sha256').update(Math.random().toString()),
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
                 console.log('Send data',resume_read);
-                console.log(client.write(data));
-                if (client.bytesWritten !== data.length) { 
-                    console.log("We had a writing issue")
-                }
+                client.write(data)
                 return client.bytesWritten;
             },
             disconnect_socket: () => {
@@ -255,18 +250,19 @@ async function start_ldk(ldk) {
             },
             eq: (a) => {// should check if this is the same socket
                 console.log('EQ');
-                return true;
+                return a.hash() == socket.hash();
             },
-            hash: () => {
-                return crypto.createHash('sha256').update(Math.random().toString());
+            hash: (s) => {
+                //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
+                return BigInt(1); // using hashes results in a failure, not sure if this is max int values 
             }
         });
 
         client.connect(config, function() {
             client.setTimeout(10000);
             console.log('TCP connection established.');
-
-            var address = ldk.NetAddress.constructor_ipv4(config.host.split("."),config.port);
+            var addy = Uint8Array.from([127,0,0,1]);
+            var address = ldk.NetAddress.constructor_ipv4(addy,config.port);
             /*
             var i = new Uint8Array(16)
             i[0] = 0xfe;
@@ -274,12 +270,12 @@ async function start_ldk(ldk) {
             i[15] = 0x01;
             var address = ldk.NetAddress.constructor_ipv6(new Uint8Array(16),config.port);
             */
-            
+            //console.log(Buffer.from(peerParts[0], 'hex'), socket, address)
             var inbound = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socket, address);
             
             
             
-            console.log(socket.send_data(inbound.res, true).length)
+            socket.send_data(inbound.res, true);
             
         });        
     }

@@ -37,7 +37,7 @@
     "crypto": "^1.0.1",
     "dotenv": "^16.0.1",
     "dotenv-expand": "^8.0.3",
-    "lightningdevkit": "^0.0.10-6.0beta1",
+    "lightningdevkit": "^0.0.10-9",
     "socket.io": "^4.5.1",
     "socket.io-client": "^4.5.1"
   }
