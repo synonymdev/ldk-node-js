@@ -10,7 +10,7 @@ const { syncBuiltinESMExports } = require("module");
 const USER = process.env.BITCOIN_USER;
 const PASS = process.env.BITCOIN_PASS;
 const HOST = process.env.BITCOIN_CORS_RPC_URL;
-
+var socketId = 1;
 // ✅ Step 1: Initialize the FeeEstimator
 // ✅ Step 2: Initialize the Logger
 // ✅ Step 3: Initialize the BroadcasterInterface
@@ -254,7 +254,7 @@ async function start_ldk(ldk) {
             },
             hash: (s) => {
                 //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
-                return BigInt(1); // using hashes results in a failure, not sure if this is max int values 
+                return BigInt(socketId++); // using hashes results in a failure, not sure if this is max int values 
             }
         });
 
