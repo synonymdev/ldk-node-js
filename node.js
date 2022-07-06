@@ -93,10 +93,6 @@ async function start_ldk(ldk) {
         update_persisted_channel(channel_id, update, data, update_id) {
             console.log("persist_new_channel")
             return ldk.Result_NoneChannelMonitorUpdateErrZ.constructor_ok();
-        },
-        read_channel_monitors(keys_manager) {
-            console.log("persist_new_channel")
-            return ldk.Result_NoneChannelMonitorUpdateErrZ.constructor_ok();
         }
     });
 
@@ -119,10 +115,10 @@ async function start_ldk(ldk) {
     const keys_manager = ldk.KeysManager.constructor_new(seed, BigInt(42), 42);
     const keys_interface = keys_manager.as_KeysInterface();
     const config = ldk.UserConfig.constructor_default();
-    const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Testnet, ldk.BestBlock.constructor_from_genesis(ldk.Network.LDKNetwork_Testnet));
+    const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_from_genesis(ldk.Network.LDKNetwork_Regtest));
 
     // Step 7: Read ChannelMonitor state from disk
-    //const channelmonitors = persister.read_channel_monitors(keys_manager);
+    // const channelmonitors = persister.read_channel_monitors(keys_manager);
     //persister.read_channel_monitors();
 
     // Step 8: Initialize the ChannelManager
@@ -133,13 +129,14 @@ async function start_ldk(ldk) {
     // ❌ Step 11: Optional: Initialize the P2PGossipSync
 
     let genesis_hash = await rpcclient("getblockhash",[0]);
-    let network_graph = ldk.NetworkGraph.constructor_new(Buffer.from(genesis_hash, "hex"));
-    let net_graph_msg_handler = ldk.MessageHandler.constructor_new(network_graph, new ldk.Option_AccessZ(), logger) // removed in the new bindings
+    let network_graph = ldk.NetworkGraph.constructor_new(Buffer.from(genesis_hash, "hex"), logger);
+    let gossip_sync = ldk.P2PGossipSync.constructor_new(network_graph, new ldk.Option_AccessZ(), logger) // removed in the new bindings
+    
     // ✅ Step 12: Initialize the PeerManager
-
+    
     let lightning_msg_handler = ldk.MessageHandler.constructor_new({
         chan_handler: channel_manager,
-        route_handler: net_graph_msg_handler
+        route_handler: gossip_sync
     });
 
     let ephemeral_bytes = crypto.randomBytes(32);
@@ -148,15 +145,15 @@ async function start_ldk(ldk) {
 
     let peer_manager = ldk.PeerManager.constructor_new(
         channel_manager.as_ChannelMessageHandler(),
-        ignoring_custom_msg_handler.as_RoutingMessageHandler(),
+        gossip_sync.as_RoutingMessageHandler(),
         keys_interface.get_node_secret().res,
         ephemeral_bytes,
         logger,
         ignoring_custom_msg_handler.as_CustomMessageHandler()
     );
+    
     // ## Running LDK
 	// Step 13: Initialize networking
-
     console.log("Local Node ID is " + Buffer.from(channel_manager.get_our_node_id()).toString('hex'))
     var local = repl.start("> ");
     local.context.ldk = ldk
@@ -206,22 +203,30 @@ async function start_ldk(ldk) {
     }
 
     local.context.connectpeer = function(peer) {
+        socketId++;
         let peerParts = peer.split("@");
         var config = {
             host: peerParts[1].split(":")[0],
             port: parseInt(peerParts[1].split(":")[1])
         };
-        //console.log(config);
+
         const client = new net.Socket();
+        client.on('connect', function() {
+            console.log("Connected to peer")
+        })
         client.on('error', function(chunk) {
             console.log("we got an error");
         })
         
         client.on('data', function(chunk) {
             console.log("bytes written", client.bytesWritten)
-            console.log("we got data");
-            if (peer_manager.write_buffer_space_avail(socket).is_ok()) {
+            peer_manager.read_event(socket, chunk);
+            var writerBufferSpaceAvail = peer_manager.write_buffer_space_avail(socket).is_ok();
+            if (writerBufferSpaceAvail) {
+                console.log("process")
                 peer_manager.process_events();
+            } else {
+                console.log("NOT DONE!!!!")
             }
         })
       
@@ -234,12 +239,14 @@ async function start_ldk(ldk) {
         });
         
         client.on('timeout', function() {
+            peer_manager.socket_disconnected(socket);
+            peer_manager.process_events();
             console.log("timeout!");
         });
         var socket = ldk.SocketDescriptor.new_impl({
             id : crypto.createHash('sha256').update(Math.random().toString()),
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                console.log('Send data',resume_read);
+                console.log('Send data');
                 client.write(data)
                 return client.bytesWritten;
             },
@@ -253,34 +260,24 @@ async function start_ldk(ldk) {
                 return a.hash() == socket.hash();
             },
             hash: (s) => {
+                console.log("socketId", socketId)
                 //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
-                return BigInt(socketId++); // using hashes results in a failure, not sure if this is max int values 
+                return BigInt(socketId); // using hashes results in a failure, not sure if this is max int values 
             }
         });
 
         client.connect(config, function() {
-            client.setTimeout(10000);
+            client.setTimeout(1000);
             console.log('TCP connection established.');
             var addy = Uint8Array.from([127,0,0,1]);
             var address = ldk.NetAddress.constructor_ipv4(addy,config.port);
-            /*
-            var i = new Uint8Array(16)
-            i[0] = 0xfe;
-            i[1] = 0x80;
-            i[15] = 0x01;
-            var address = ldk.NetAddress.constructor_ipv6(new Uint8Array(16),config.port);
-            */
-            //console.log(Buffer.from(peerParts[0], 'hex'), socket, address)
             var inbound = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socket, address);
-            
-            
-            
-            socket.send_data(inbound.res, true);
-            
+            socket.send_data(inbound.res, true);  
         });        
     }
 
     if (process.env.LN_REMOTE_HOST) { // Automatically connect for debugging purposes
+        console.log("Automatically connect to peer")
         local.context.connectpeer(process.env.LN_REMOTE_HOST);
     }
 
