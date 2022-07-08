@@ -225,6 +225,11 @@ async function start_ldk(ldk) {
         client.on('error', function(chunk) {
             console.log("we got an error");
         })
+
+        setInterval(() => {
+            console.log("polling")
+            peer_manager.process_events()
+        },1000)
         
         client.on('data', function(chunk) {
             console.log("bytes written", client.bytesWritten)
