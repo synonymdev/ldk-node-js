@@ -10,7 +10,8 @@ const { syncBuiltinESMExports } = require("module");
 const USER = process.env.BITCOIN_USER;
 const PASS = process.env.BITCOIN_PASS;
 const HOST = process.env.BITCOIN_CORS_RPC_URL;
-var socketId = 1;
+var socketId = 0; // eventually to be replaced by a hash function
+
 // ✅ Step 1: Initialize the FeeEstimator
 // ✅ Step 2: Initialize the Logger
 // ✅ Step 3: Initialize the BroadcasterInterface
@@ -51,6 +52,13 @@ const rpcclient = async (method, params) => {
 	return res.data.result;
 };
 
+
+
+  function toHexString(byteArray) {
+    return Array.prototype.map.call(byteArray, function(byte) {
+      return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+    }).join('');
+  }
 async function start_ldk(ldk) {
     var info = await rpcclient("getblockchaininfo",[]);
     console.log("Connected to Bitcoin backend: ", info.chain)
@@ -133,7 +141,7 @@ async function start_ldk(ldk) {
     let gossip_sync = ldk.P2PGossipSync.constructor_new(network_graph, new ldk.Option_AccessZ(), logger) // removed in the new bindings
     
     // ✅ Step 12: Initialize the PeerManager
-    
+
     let lightning_msg_handler = ldk.MessageHandler.constructor_new({
         chan_handler: channel_manager,
         route_handler: gossip_sync
@@ -194,7 +202,7 @@ async function start_ldk(ldk) {
     }
 
     local.context.listpeers = function() {
-        return peer_manager.get_peer_node_ids()
+        return peer_manager.get_peer_node_ids().map((item) => toHexString(item));
     }
 
     // Requires imeplement a signer
@@ -221,13 +229,13 @@ async function start_ldk(ldk) {
         client.on('data', function(chunk) {
             console.log("bytes written", client.bytesWritten)
             peer_manager.read_event(socket, chunk);
-            var writerBufferSpaceAvail = peer_manager.write_buffer_space_avail(socket).is_ok();
-            if (writerBufferSpaceAvail) {
+            //var writerBufferSpaceAvail = peer_manager.write_buffer_space_avail(socket).is_ok();
+            //if (writerBufferSpaceAvail) {
                 console.log("process")
                 peer_manager.process_events();
-            } else {
-                console.log("NOT DONE!!!!")
-            }
+            //} else {
+              //  console.log("NOT DONE!!!!")
+            //}
         })
       
         client.on('end', function() {
@@ -248,6 +256,7 @@ async function start_ldk(ldk) {
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
                 console.log('Send data');
                 client.write(data)
+                console.log(data.length, client.bytesWritten)
                 return client.bytesWritten;
             },
             disconnect_socket: () => {
