@@ -2,6 +2,10 @@
 import * as ldk from "lightningdevkit";
 const axios = require("axios");
 const crypto = require("crypto");
+var run_tests_node = null;
+(async () => {
+  var { run_tests_node } = await import("lightningdevkit/test/tests.mjs");
+})()
 
 import {
   FeeEstimator,
@@ -315,6 +319,10 @@ const compileWasm = (pathToWasm) => {
       ldk
         .initializeWasmFromBinary(bytes)
         .then(async (ff) => {
+          var { run_tests_node } = await import("lightningdevkit/test/tests.mjs");
+
+          run_tests_node(bytes)
+
           await window.ldk.start()
         })
     });

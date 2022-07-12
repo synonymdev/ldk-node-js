@@ -10,7 +10,9 @@ const { syncBuiltinESMExports } = require("module");
 const USER = process.env.BITCOIN_USER;
 const PASS = process.env.BITCOIN_PASS;
 const HOST = process.env.BITCOIN_CORS_RPC_URL;
-var socketId = 0; // eventually to be replaced by a hash function
+const PORT = process.env.PORT;
+var socketInboundId = 0; // eventually to be replaced by a hash function
+var socketOutboundId = 0; // eventually to be replaced by a hash function
 
 // ✅ Step 1: Initialize the FeeEstimator
 // ✅ Step 2: Initialize the Logger
@@ -211,7 +213,7 @@ async function start_ldk(ldk) {
     }
 
     local.context.connectpeer = function(peer) {
-        socketId++;
+        socketOutboundId++;
         let peerParts = peer.split("@");
         var config = {
             host: peerParts[1].split(":")[0],
@@ -226,14 +228,11 @@ async function start_ldk(ldk) {
             console.log("we got an error");
         })
 
-        setInterval(() => {
-            console.log("polling")
-            peer_manager.process_events()
-        },1000)
+       
         
         client.on('data', function(chunk) {
             console.log("bytes written", client.bytesWritten)
-            peer_manager.read_event(socket, chunk);
+            peer_manager.read_event(socketOutbound, chunk);
             //var writerBufferSpaceAvail = peer_manager.write_buffer_space_avail(socket).is_ok();
             //if (writerBufferSpaceAvail) {
                 console.log("process")
@@ -252,12 +251,12 @@ async function start_ldk(ldk) {
         });
         
         client.on('timeout', function() {
-            peer_manager.socket_disconnected(socket);
-            peer_manager.process_events();
+           // peer_manager.socket_disconnected(socket);
+           // peer_manager.process_events();
             console.log("timeout!");
         });
-        var socket = ldk.SocketDescriptor.new_impl({
-            id : crypto.createHash('sha256').update(Math.random().toString()),
+
+        var socketOutbound = ldk.SocketDescriptor.new_impl({
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
                 console.log('Send data');
                 client.write(data)
@@ -271,12 +270,12 @@ async function start_ldk(ldk) {
             },
             eq: (a) => {// should check if this is the same socket
                 console.log('EQ');
-                return a.hash() == socket.hash();
+                return a.hash() == socketOutbound.hash();
             },
             hash: (s) => {
-                console.log("socketId", socketId)
+                console.log("socketId", socketOutboundId)
                 //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
-                return BigInt(socketId); // using hashes results in a failure, not sure if this is max int values 
+                return BigInt(socketOutboundId); // using hashes results in a failure, not sure if this is max int values 
             }
         });
 
@@ -285,10 +284,67 @@ async function start_ldk(ldk) {
             console.log('TCP connection established.');
             var addy = Uint8Array.from([127,0,0,1]);
             var address = ldk.NetAddress.constructor_ipv4(addy,config.port);
-            var inbound = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socket, address);
-            socket.send_data(inbound.res, true);  
+            var outbound = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socketOutbound, address);
+            socketOutbound.send_data(outbound.res, true);  
         });        
     }
+
+    const clientInbound = net.createServer((c) => {
+        var socketInbound = ldk.SocketDescriptor.new_impl({
+            send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
+                console.log('Send data');
+                c.write(data)
+                console.log(data.length, c.bytesWritten)
+                return c.bytesWritten;
+            },
+            disconnect_socket: () => {
+                console.log('Closing socket');
+                c.close()
+    
+            },
+            eq: (a) => {// should check if this is the same socket
+                console.log('EQ');
+                return a.hash() == socketInbound.hash();
+            },
+            hash: (s) => {
+                console.log("socketId", socketInboundId)
+                //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
+                return BigInt(socketInboundId); // using hashes results in a failure, not sure if this is max int values 
+            }
+        });
+
+        console.log('client connected');
+        console.log(c.remoteAddress) // currently IPv6, hacking for IPv4
+        c.on('end', () => {
+        console.log('client disconnected');
+        });
+
+        c.on('data', (chunk) => {
+
+            console.log("We got a chunk!", chunk)
+            peer_manager.read_event(socketInbound,chunk);
+            peer_manager.process_events();
+        })
+    
+        c.on('error', (err) => {
+            throw err;
+        });
+
+        var addy = Uint8Array.from([127,0,0,1]);
+        var address = ldk.NetAddress.constructor_ipv4(addy,config.port);
+        console.log("Inbound")
+        var inbound = peer_manager.new_inbound_connection(socketInbound, address);
+
+    })
+
+   
+    
+    clientInbound.listen(PORT, () => {
+        console.log('server bound to' , PORT);
+    });
+
+    
+
 
     if (process.env.LN_REMOTE_HOST) { // Automatically connect for debugging purposes
         console.log("Automatically connect to peer")
@@ -296,6 +352,7 @@ async function start_ldk(ldk) {
     }
 
     
+
     // Requires implementing rust-lightning-invoice https://github.com/rust-bitcoin/rust-lightning-invoice/
     local.context.getinvoice = function(amt_msat,expiry_secs) { 
 
