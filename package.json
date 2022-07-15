@@ -36,6 +36,7 @@
     "axios": "^0.27.2",
     "bitcoind-rpc": "^0.9.1",
     "crypto": "^1.0.1",
+    "debug": "^4.3.4",
     "dotenv": "^16.0.1",
     "dotenv-expand": "^8.0.3",
     "lightningdevkit": "^0.0.10-9",

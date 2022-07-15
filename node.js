@@ -1,6 +1,7 @@
 const fs = require("fs")
 const dotenv = require("dotenv").config();
 const dotenvexpand = require("dotenv-expand").expand(dotenv);
+const debug = require('debug')('network')
 const repl = require("repl");
 const crypto = require("crypto");
 const axios = require("axios");
@@ -13,7 +14,7 @@ const HOST = process.env.BITCOIN_CORS_RPC_URL;
 const PORT = process.env.PORT;
 var socketInboundId = 0; // eventually to be replaced by a hash function
 var socketOutboundId = 0; // eventually to be replaced by a hash function
-
+debug('booting %o', "a");
 // ✅ Step 1: Initialize the FeeEstimator
 // ✅ Step 2: Initialize the Logger
 // ✅ Step 3: Initialize the BroadcasterInterface
@@ -56,11 +57,13 @@ const rpcclient = async (method, params) => {
 
 
 
-  function toHexString(byteArray) {
+function toHexString(byteArray) {
     return Array.prototype.map.call(byteArray, function(byte) {
-      return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        return ('0' + (byte & 0xFF).toString(16)).slice(-2);
     }).join('');
-  }
+}
+
+ 
 async function start_ldk(ldk) {
     var info = await rpcclient("getblockchaininfo",[]);
     console.log("Connected to Bitcoin backend: ", info.chain)
@@ -75,7 +78,26 @@ async function start_ldk(ldk) {
     // Step 1: Initialize the FeeEstimator
     const fee_est = ldk.FeeEstimator.new_impl({
         get_est_sat_per_1000_weight(confirmation_target) {
-            return 253;
+            switch (confirmation_target) {
+            case ldk.ConfirmationTarget.LDKConfirmationTarget_Background:
+                // insert code to retireve a background feerate
+                //return rpc.estimateSmartFee(6, console.log)
+                console.log("LDKConfirmationTarget_Background");
+                return 1;
+                break;
+            case ldk.ConfirmationTarget.LDKConfirmationTarget_Normal:
+                // <insert code to retrieve a normal (i.e. within ~6 blocks) feerate>
+                console.log("LDKConfirmationTarget_Normal");
+                return 5000;
+                break;
+            case ldk.ConfirmationTarget.LDKConfirmationTarget_HighPriority:
+                // <insert code to retrieve a high-priority feerate>
+                console.log("LDKConfirmationTarget_HighPriority");
+                return 10000;
+                break;
+            default:
+                return 253;
+            }
         }
     });
     
@@ -124,7 +146,12 @@ async function start_ldk(ldk) {
     
     const keys_manager = ldk.KeysManager.constructor_new(seed, BigInt(42), 42);
     const keys_interface = keys_manager.as_KeysInterface();
+    
     const config = ldk.UserConfig.constructor_default();
+    
+    const ChannelHandshakeConfig = ldk.ChannelHandshakeConfig.constructor_default();
+    ChannelHandshakeConfig.set_announced_channel(true);
+    config.set_channel_handshake_config(ChannelHandshakeConfig)
     const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_from_genesis(ldk.Network.LDKNetwork_Regtest));
 
     // Step 7: Read ChannelMonitor state from disk
@@ -135,6 +162,11 @@ async function start_ldk(ldk) {
     const channel_manager = ldk.ChannelManager.constructor_new(fee_est, chain_watch, tx_broadcaster, logger, keys_interface, config, params);
 
     // ❌ Step 9: Sync ChannelMonitors and ChannelManager to chain tip
+
+
+    //restarting_node = false;
+    //let getinfo_resp = bitcoind_client.get_blockchain_info().await;
+
     // ❌ Step 10: Give ChannelMonitors to ChainMonitor
     // ❌ Step 11: Optional: Initialize the P2PGossipSync
 
@@ -164,6 +196,11 @@ async function start_ldk(ldk) {
     
     // ## Running LDK
 	// Step 13: Initialize networking
+
+    // Step 14
+    console.log("Sync data from chain", info.bestblockhash, info.blocks);
+    //channel_manager.update_best_block(info.bestblockhash, info.blocks);
+    // Step 15
     console.log("Local Node ID is " + Buffer.from(channel_manager.get_our_node_id()).toString('hex'))
     var local = repl.start("> ");
     local.context.ldk = ldk
@@ -212,6 +249,24 @@ async function start_ldk(ldk) {
         //ldk.util
     }
 
+    local.context.openchannel = function(their_network_key, channel_value_satoshis, push_msat, user_channel_id, override_config) {
+       // create_channel(their_network_key, channel_value_satoshis, push_msat, user_channel_id, override_config) {
+        /*
+        * `user_channel_id` will be provided back as in
+     * [`Event::FundingGenerationReady::user_channel_id`] to allow tracking of which events
+     * correspond with which `create_channel` call. Note that the `user_channel_id` defaults to 0
+     * for inbound channels, so you may wish to avoid using 0 for `user_channel_id` here.
+     * `user_channel_id` has no meaning inside of LDK, it is simply copied to events and otherwise
+     * ignored.
+        */
+        user_channel_id = BigInt(0);
+        override_config = ldk.UserConfig.constructor_default();
+        return channel_manager.create_channel(Buffer.from(their_network_key,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),user_channel_id,override_config);
+    }
+
+    local.context.listchannels = function() {
+        return channel_manager.list_channels();
+    }
     local.context.connectpeer = function(peer) {
         socketOutboundId++;
         let peerParts = peer.split("@");
@@ -222,16 +277,16 @@ async function start_ldk(ldk) {
 
         const client = new net.Socket();
         client.on('connect', function() {
-            console.log("Connected to peer")
+          //  console.log("Connected to peer")
         })
         client.on('error', function(chunk) {
-            console.log("we got an error");
+          //  console.log("we got an error");
         })
 
        
         
         client.on('data', function(chunk) {
-            console.log("bytes written", client.bytesWritten)
+           // console.log("bytes written", client.bytesWritten)
             peer_manager.read_event(socketOutbound, chunk);
             //var writerBufferSpaceAvail = peer_manager.write_buffer_space_avail(socket).is_ok();
             //if (writerBufferSpaceAvail) {
@@ -244,6 +299,8 @@ async function start_ldk(ldk) {
       
         client.on('end', function() {
             console.log('Requested an end to the TCP connection');
+            peer_manager.socket_disconnected(socketOutbound);
+            peer_manager.process_events();
         });
         
         client.on('drain', function() {
@@ -251,16 +308,16 @@ async function start_ldk(ldk) {
         });
         
         client.on('timeout', function() {
-           // peer_manager.socket_disconnected(socket);
-           // peer_manager.process_events();
+           peer_manager.socket_disconnected(socketOutbound);
+           peer_manager.process_events();
             console.log("timeout!");
         });
 
         var socketOutbound = ldk.SocketDescriptor.new_impl({
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                console.log('Send data');
+                //console.log('Send data');
                 client.write(data)
-                console.log(data.length, client.bytesWritten)
+                //console.log(data.length, client.bytesWritten)
                 return client.bytesWritten;
             },
             disconnect_socket: () => {
@@ -269,11 +326,11 @@ async function start_ldk(ldk) {
 
             },
             eq: (a) => {// should check if this is the same socket
-                console.log('EQ');
+              //  console.log('EQ');
                 return a.hash() == socketOutbound.hash();
             },
             hash: (s) => {
-                console.log("socketId", socketOutboundId)
+                //console.log("socketId", socketOutboundId)
                 //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
                 return BigInt(socketOutboundId); // using hashes results in a failure, not sure if this is max int values 
             }
@@ -292,9 +349,9 @@ async function start_ldk(ldk) {
     const clientInbound = net.createServer((c) => {
         var socketInbound = ldk.SocketDescriptor.new_impl({
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                console.log('Send data');
+                //console.log('Send data');
                 c.write(data)
-                console.log(data.length, c.bytesWritten)
+                //console.log(data.length, c.bytesWritten)
                 return c.bytesWritten;
             },
             disconnect_socket: () => {
@@ -303,31 +360,47 @@ async function start_ldk(ldk) {
     
             },
             eq: (a) => {// should check if this is the same socket
-                console.log('EQ');
+              // console.log('EQ');
                 return a.hash() == socketInbound.hash();
             },
             hash: (s) => {
-                console.log("socketId", socketInboundId)
+               // console.log("socketId", socketInboundId)
                 //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
                 return BigInt(socketInboundId); // using hashes results in a failure, not sure if this is max int values 
             }
         });
 
         console.log('client connected');
-        console.log(c.remoteAddress) // currently IPv6, hacking for IPv4
+       // console.log(c.remoteAddress) // currently IPv6, hacking for IPv4
         c.on('end', () => {
         console.log('client disconnected');
         });
 
         c.on('data', (chunk) => {
 
-            console.log("We got a chunk!", chunk)
+            // console.log("We got a chunk!", chunk.toString('hex'))
             peer_manager.read_event(socketInbound,chunk);
             peer_manager.process_events();
         })
     
         c.on('error', (err) => {
             throw err;
+        });
+
+        c.on('end', function() {
+            console.log('Requested an end to the TCP connection');
+            peer_manager.socket_disconnected(socketInbound);
+            peer_manager.process_events();
+        });
+        
+        c.on('drain', function() {
+            console.log("drain!");
+        });
+        
+        c.on('timeout', function() {
+            peer_manager.socket_disconnected(socketInbound);
+            peer_manager.process_events();
+            console.log("timeout!");
         });
 
         var addy = Uint8Array.from([127,0,0,1]);
