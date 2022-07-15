@@ -125,7 +125,7 @@ async function start_ldk(ldk) {
         update_persisted_channel(channel_id, update, data, update_id) {
             console.log("persist_new_channel")
             return ldk.Result_NoneChannelMonitorUpdateErrZ.constructor_ok();
-        }
+        },
     });
 
     // Step 5: Initialize the ChainMonitor
@@ -152,7 +152,13 @@ async function start_ldk(ldk) {
     const ChannelHandshakeConfig = ldk.ChannelHandshakeConfig.constructor_default();
     ChannelHandshakeConfig.set_announced_channel(true);
     config.set_channel_handshake_config(ChannelHandshakeConfig)
-    const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_from_genesis(ldk.Network.LDKNetwork_Regtest));
+    console.log("Setting up new node at ", info.bestblockhash, info.blocks);
+
+    //const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_from_genesis(ldk.Network.LDKNetwork_Regtest));
+    
+    const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_new(Buffer.from(info.bestblockhash,'hex'),info.blocks));
+
+
 
     // Step 7: Read ChannelMonitor state from disk
     // const channelmonitors = persister.read_channel_monitors(keys_manager);
@@ -167,12 +173,19 @@ async function start_ldk(ldk) {
     //restarting_node = false;
     //let getinfo_resp = bitcoind_client.get_blockchain_info().await;
 
-    // ❌ Step 10: Give ChannelMonitors to ChainMonitor
+    // ❌ Step 10: Give ChannelMonitors to ChainMonitor ASSUMING WE ARE NOT STARTING A NEW NODE
+    /*
+    for item in chain_listener_channel_monitors.drain(..) {
+		let channel_monitor = item.1 .0;
+		let funding_outpoint = item.2;
+		chain_monitor.watch_channel(funding_outpoint, channel_monitor).unwrap();
+	}
+    */
     // ❌ Step 11: Optional: Initialize the P2PGossipSync
 
     let genesis_hash = await rpcclient("getblockhash",[0]);
     let network_graph = ldk.NetworkGraph.constructor_new(Buffer.from(genesis_hash, "hex"), logger);
-    let gossip_sync = ldk.P2PGossipSync.constructor_new(network_graph, new ldk.Option_AccessZ(), logger) // removed in the new bindings
+    let gossip_sync = ldk.P2PGossipSync.constructor_new(network_graph, new ldk.Option_AccessZ(), logger) 
     
     // ✅ Step 12: Initialize the PeerManager
 
@@ -182,7 +195,8 @@ async function start_ldk(ldk) {
     });
 
     let ephemeral_bytes = crypto.randomBytes(32);
-    var message_handler_chan_handler_arg = new ldk.ChannelMessageHandler.constructor()
+    
+    //var message_handler_chan_handler_arg = new ldk.ChannelMessageHandler.constructor()
     const ignoring_custom_msg_handler = ldk.IgnoringMessageHandler.constructor_new();
 
     let peer_manager = ldk.PeerManager.constructor_new(
@@ -197,15 +211,80 @@ async function start_ldk(ldk) {
     // ## Running LDK
 	// Step 13: Initialize networking
 
-    // Step 14
+    // Step 14 Connect and Disconnect Blocks
     console.log("Sync data from chain", info.bestblockhash, info.blocks);
+
+    // inline chain_sync_completed which is not available in TS :/
+    //channel_manager.write();
+    //network_graph.write();
+    let event_handler = ldk.EventHandler.new_impl({
+        handle_event: function(e) {
+            console.log("Handling Event here", e)
+          if (e instanceof Event.FundingGenerationReady) {
+            // <insert code to handle this event>
+          } else if (e instanceof Event.PaymentReceived) {
+            // <insert code to handle this event>
+          } else if (e instanceof Event.PaymentSent) {
+            // <insert code to handle this event>
+          } else if (e instanceof Event.PaymentPathFailed) {
+            // <insert code to handle this event>
+          } else if (e instanceof Event.PendingHTLCsForwardable) {
+            // <insert code to handle this event>
+          } else if (e instanceof Event.SpendableOutputs) {
+            // <insert code to handle this event>
+          } else if (e instanceof Event.PaymentForwarded) {
+            // <insert code to handle this event>
+          } else if (e instanceof Event.ChannelClosed) {
+            // <insert code to handle this event>
+          }
+        }
+       
+    });
+
+
+    /*
+    var persister2 = ldk.Persister.new_impl({
+        persist_manager: console.log,
+        persist_graph: console.log,
+        persist_scorer: console.log
+    })
+    persister2.persist_manager(channel_manager.write());
+    persister2.persist_graph(network_graph.write());
+*/
+
+
+    // let channel_manager_listener = channel_manager.clone();
+	// let chain_monitor_listener = chain_monitor.clone();
+	// let bitcoind_block_source = bitcoind_client.clone();
+	// let network = args.network;
+    /*
+    tokio::spawn(async move {
+		let mut derefed = bitcoind_block_source.deref();
+		let chain_poller = poll::ChainPoller::new(&mut derefed, network);
+		let chain_listener = (chain_monitor_listener, channel_manager_listener);
+		let mut spv_client =
+			SpvClient::new(chain_tip.unwrap(), chain_poller, &mut cache, &chain_listener);
+		loop {
+			spv_client.poll_best_tip().await.unwrap();
+			tokio::time::sleep(Duration::from_secs(1)).await;
+		}
+	});
+    */
+
     //channel_manager.update_best_block(info.bestblockhash, info.blocks);
+
     // Step 15
     console.log("Local Node ID is " + Buffer.from(channel_manager.get_our_node_id()).toString('hex'))
     var local = repl.start("> ");
     local.context.ldk = ldk
     local.context.persister = persister;
     local.context.km = keys_manager;
+    local.context.gossip_sync = gossip_sync;
+    local.context.channel_manager = channel_manager;
+    local.context.network_graph = network_graph;
+
+    local.context.chain_monitor = chain_monitor;
+
     local.context.help = (function() {
         var resp = `
         openchannel pubkey@host:port <amt_satoshis>
