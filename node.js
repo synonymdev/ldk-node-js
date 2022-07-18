@@ -219,7 +219,7 @@ async function start_ldk(ldk) {
     //network_graph.write();
     let event_handler = ldk.EventHandler.new_impl({
         handle_event: function(e) {
-            console.log("Handling Event here", e)
+            console.log(">>>>>>> Handling Event here <<<<<<<", e)
           if (e instanceof Event.FundingGenerationReady) {
             // <insert code to handle this event>
           } else if (e instanceof Event.PaymentReceived) {
@@ -275,6 +275,30 @@ async function start_ldk(ldk) {
 
     // Step 15
     console.log("Local Node ID is " + Buffer.from(channel_manager.get_our_node_id()).toString('hex'))
+    
+    
+    setInterval(() => {
+        console.log("Loop");
+        //console.log("timer_tick_occurred");
+    
+        console.log("Channel Manager Events process_pending_events");
+       // channel_manager.as_EventsProvider().process_pending_events(event_handler);
+       // chain_monitor.as_EventsProvider().process_pending_events(event_handler);
+
+       // peer_manager.process_events();
+        //channel_manager.await_persistable_update_timeout(100);
+        //chain_monitor.as_EventsProvider().process_pending_events(event_handler);
+        //peer_manager.process_events();
+
+        console.log("peer_manager.process_events()");
+        peer_manager.process_events();
+
+        console.log("peer_manager.timer_tick_occurred()");
+        peer_manager.timer_tick_occurred();
+        peer_manager.process_events();
+
+    },5000)
+    
     var local = repl.start("> ");
     local.context.ldk = ldk
     local.context.persister = persister;
@@ -370,7 +394,11 @@ async function start_ldk(ldk) {
             //var writerBufferSpaceAvail = peer_manager.write_buffer_space_avail(socket).is_ok();
             //if (writerBufferSpaceAvail) {
                 console.log("process")
+                //channel_manager.as_EventsProvider().process_pending_events(event_handler);
+                //chain_monitor.as_EventsProvider().process_pending_events(event_handler);
+                //peer_manager.process_events();
                 peer_manager.process_events();
+                //peer_manager.timer_tick_occurred();
             //} else {
               //  console.log("NOT DONE!!!!")
             //}
@@ -394,7 +422,7 @@ async function start_ldk(ldk) {
 
         var socketOutbound = ldk.SocketDescriptor.new_impl({
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                //console.log('Send data');
+                console.log('Send data');
                 client.write(data)
                 //console.log(data.length, client.bytesWritten)
                 return client.bytesWritten;
@@ -428,7 +456,7 @@ async function start_ldk(ldk) {
     const clientInbound = net.createServer((c) => {
         var socketInbound = ldk.SocketDescriptor.new_impl({
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                //console.log('Send data');
+                console.log('Send data');
                 c.write(data)
                 //console.log(data.length, c.bytesWritten)
                 return c.bytesWritten;
@@ -436,7 +464,6 @@ async function start_ldk(ldk) {
             disconnect_socket: () => {
                 console.log('Closing socket');
                 c.close()
-    
             },
             eq: (a) => {// should check if this is the same socket
               // console.log('EQ');
@@ -452,13 +479,14 @@ async function start_ldk(ldk) {
         console.log('client connected');
        // console.log(c.remoteAddress) // currently IPv6, hacking for IPv4
         c.on('end', () => {
-        console.log('client disconnected');
+            console.log('client disconnected');
         });
 
         c.on('data', (chunk) => {
 
             // console.log("We got a chunk!", chunk.toString('hex'))
             peer_manager.read_event(socketInbound,chunk);
+            channel_manager.as_EventsProvider().process_pending_events(event_handler);
             peer_manager.process_events();
         })
     
@@ -470,6 +498,7 @@ async function start_ldk(ldk) {
             console.log('Requested an end to the TCP connection');
             peer_manager.socket_disconnected(socketInbound);
             peer_manager.process_events();
+           // peer_manager.timer_tick_occurred();
         });
         
         c.on('drain', function() {
