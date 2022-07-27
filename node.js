@@ -276,26 +276,29 @@ async function start_ldk(ldk) {
     // Step 15
     console.log("Local Node ID is " + Buffer.from(channel_manager.get_our_node_id()).toString('hex'))
     
-    
+    channel_manager.timer_tick_occurred();
     setInterval(() => {
         console.log("Loop");
         //console.log("timer_tick_occurred");
     
-        console.log("Channel Manager Events process_pending_events");
-       // channel_manager.as_EventsProvider().process_pending_events(event_handler);
+      //  console.log("Channel Manager Events process_pending_events");
+      //  channel_manager.as_EventsProvider().process_pending_events(event_handler);
        // chain_monitor.as_EventsProvider().process_pending_events(event_handler);
 
+       // channel_manager.timer_tick_occurred();
        // peer_manager.process_events();
         //channel_manager.await_persistable_update_timeout(100);
         //chain_monitor.as_EventsProvider().process_pending_events(event_handler);
         //peer_manager.process_events();
 
-        console.log("peer_manager.process_events()");
-        peer_manager.process_events();
+        //peer_manager.process_events();
 
-        console.log("peer_manager.timer_tick_occurred()");
         peer_manager.timer_tick_occurred();
         peer_manager.process_events();
+        //channel_manager.as_EventsProvider().process_pending_events(event_handler);
+        //chain_monitor.as_EventsProvider().process_pending_events(event_handler);
+        //peer_manager.process_pending_events();
+        //peer_manager.process_events();
 
     },5000)
     
@@ -379,58 +382,56 @@ async function start_ldk(ldk) {
         };
 
         const client = new net.Socket();
-        client.on('connect', function() {
-          //  console.log("Connected to peer")
-        })
-        client.on('error', function(chunk) {
-          //  console.log("we got an error");
-        })
+        client.on('end', () => {
+            console.log('client disconnected');
+        });
 
-       
-        
-        client.on('data', function(chunk) {
-           // console.log("bytes written", client.bytesWritten)
-            peer_manager.read_event(socketOutbound, chunk);
-            //var writerBufferSpaceAvail = peer_manager.write_buffer_space_avail(socket).is_ok();
-            //if (writerBufferSpaceAvail) {
-                console.log("process")
-                //channel_manager.as_EventsProvider().process_pending_events(event_handler);
-                //chain_monitor.as_EventsProvider().process_pending_events(event_handler);
-                //peer_manager.process_events();
-                peer_manager.process_events();
-                //peer_manager.timer_tick_occurred();
-            //} else {
-              //  console.log("NOT DONE!!!!")
-            //}
+        client.on('data', (chunk) => {
+            res = peer_manager.read_event(socketOutbound,chunk);
+			if (!res.is_ok()) descriptor.disconnect_socket();
+			else if (res.res) client.pause();
+            peer_manager.process_events();
+            // // console.log("We got a chunk!", chunk.toString('hex'))
+            // peer_manager.read_event(socketInbound,chunk);
+            // channel_manager.as_EventsProvider().process_pending_events(event_handler);
+            // peer_manager.process_events();
         })
-      
+    
+        client.on("close", function() {
+			peer_manager.socket_disconnected(socketOutboundId);
+		});
+
+        client.on('error', (err) => {
+            throw err;
+        });
+
         client.on('end', function() {
             console.log('Requested an end to the TCP connection');
-            peer_manager.socket_disconnected(socketOutbound);
+            peer_manager.socket_disconnected(socketOutboundId);
             peer_manager.process_events();
+           // peer_manager.timer_tick_occurred();
         });
         
         client.on('drain', function() {
-            console.log("drain!");
+            if (sock_write_waiting) {
+				if (!this_pm.write_buffer_space_avail(descriptor).is_ok()) {
+					descriptor.disconnect_socket();
+				}
+			}
         });
-        
-        client.on('timeout', function() {
-           peer_manager.socket_disconnected(socketOutbound);
-           peer_manager.process_events();
-            console.log("timeout!");
-        });
-
+        var sock_write_waiting = false;
         var socketOutbound = ldk.SocketDescriptor.new_impl({
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                console.log('Send data');
-                client.write(data)
-                //console.log(data.length, client.bytesWritten)
-                return client.bytesWritten;
+                if (resume_read) client.resume();
+
+				if (sock_write_waiting) return 0;
+				const written = client.write(data);
+				if (!written) sock_write_waiting = true;
+				return data.length;
             },
             disconnect_socket: () => {
+                client.destroy();
                 console.log('Closing socket');
-                client.close()
-
             },
             eq: (a) => {// should check if this is the same socket
               //  console.log('EQ');
@@ -448,22 +449,27 @@ async function start_ldk(ldk) {
             console.log('TCP connection established.');
             var addy = Uint8Array.from([127,0,0,1]);
             var address = ldk.NetAddress.constructor_ipv4(addy,config.port);
+            console.log(address)
             var outbound = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socketOutbound, address);
             socketOutbound.send_data(outbound.res, true);  
         });        
     }
 
     const clientInbound = net.createServer((c) => {
+        var sock_write_waiting = false;
         var socketInbound = ldk.SocketDescriptor.new_impl({
             send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                console.log('Send data');
-                c.write(data)
-                //console.log(data.length, c.bytesWritten)
-                return c.bytesWritten;
+                if (resume_read) c.resume();
+
+				if (sock_write_waiting) return 0;
+				const written = c.write(data);
+				if (!written) sock_write_waiting = true;
+				return data.length;
             },
             disconnect_socket: () => {
+                c.destroy();
                 console.log('Closing socket');
-                c.close()
+              //  c.close()
             },
             eq: (a) => {// should check if this is the same socket
               // console.log('EQ');
@@ -483,13 +489,20 @@ async function start_ldk(ldk) {
         });
 
         c.on('data', (chunk) => {
-
-            // console.log("We got a chunk!", chunk.toString('hex'))
-            peer_manager.read_event(socketInbound,chunk);
-            channel_manager.as_EventsProvider().process_pending_events(event_handler);
+            res = peer_manager.read_event(socketInbound,chunk);
+			if (!res.is_ok()) descriptor.disconnect_socket();
+			else if (res.res) c.pause();
             peer_manager.process_events();
+            // // console.log("We got a chunk!", chunk.toString('hex'))
+            // peer_manager.read_event(socketInbound,chunk);
+            // channel_manager.as_EventsProvider().process_pending_events(event_handler);
+            // peer_manager.process_events();
         })
     
+        c.on("close", function() {
+			peer_manager.socket_disconnected(socketInbound);
+		});
+
         c.on('error', (err) => {
             throw err;
         });
@@ -502,7 +515,11 @@ async function start_ldk(ldk) {
         });
         
         c.on('drain', function() {
-            console.log("drain!");
+            if (sock_write_waiting) {
+				if (!this_pm.write_buffer_space_avail(descriptor).is_ok()) {
+					descriptor.disconnect_socket();
+				}
+			}
         });
         
         c.on('timeout', function() {
