@@ -24,16 +24,16 @@ debug('booting %o', "a");
 // ❌ Step 7: Read ChannelMonitor state from disk
 // ✅ Step 8: Initialize the ChannelManager
 // ❌ Step 9: Sync ChannelMonitors and ChannelManager to chain tip
-// ❌ Step 10: Give ChannelMonitors to ChainMonitor
-// ❌ Step 11: Optional: Initialize the P2PGossipSync
+// ✅  Step 10: Give ChannelMonitors to ChainMonitor
+// ✅  Step 11: Optional: Initialize the P2PGossipSync
 // ✅ Step 12: Initialize the PeerManager
-// ❌ Step 13: Initialize networking
+// ✅  Step 13: Initialize networking
 // ❌ Step 14: Connect and Disconnect Blocks
 // ❌ Step 15: Handle LDK Events
 // ❌ Step 16: Initialize routing ProbabilisticScorer
 // ❌ Step 17: Create InvoicePayer
 // ❌ Step 18: Persist ChannelManager and NetworkGraph
-// ❌ Step 19: Background Processing
+// ✅  Step 19: Background Processing
 
 const rpcclient = async (method, params) => {
 	const data = { jsonrpc: '1.0', id: Math.random(), method, params };
