@@ -35,7 +35,6 @@ debug('booting %o', "a");
 // ❌ Step 18: Persist ChannelManager and NetworkGraph
 // ❌ Step 19: Background Processing
 
-//const RpcClient = require("bitcoind-rpc")
 const rpcclient = async (method, params) => {
 	const data = { jsonrpc: '1.0', id: Math.random(), method, params };
 	const res = await axios.post(HOST, data, {
@@ -154,8 +153,6 @@ async function start_ldk(ldk) {
     config.set_channel_handshake_config(ChannelHandshakeConfig)
     console.log("Setting up new node at ", info.bestblockhash, info.blocks);
 
-    //const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_from_genesis(ldk.Network.LDKNetwork_Regtest));
-    
     const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_new(Buffer.from(info.bestblockhash,'hex'),info.blocks));
 
 
@@ -196,7 +193,6 @@ async function start_ldk(ldk) {
 
     let ephemeral_bytes = crypto.randomBytes(32);
     
-    //var message_handler_chan_handler_arg = new ldk.ChannelMessageHandler.constructor()
     const ignoring_custom_msg_handler = ldk.IgnoringMessageHandler.constructor_new();
 
     let peer_manager = ldk.PeerManager.constructor_new(
@@ -241,65 +237,16 @@ async function start_ldk(ldk) {
        
     });
 
-
-    /*
-    var persister2 = ldk.Persister.new_impl({
-        persist_manager: console.log,
-        persist_graph: console.log,
-        persist_scorer: console.log
-    })
-    persister2.persist_manager(channel_manager.write());
-    persister2.persist_graph(network_graph.write());
-*/
-
-
-    // let channel_manager_listener = channel_manager.clone();
-	// let chain_monitor_listener = chain_monitor.clone();
-	// let bitcoind_block_source = bitcoind_client.clone();
-	// let network = args.network;
-    /*
-    tokio::spawn(async move {
-		let mut derefed = bitcoind_block_source.deref();
-		let chain_poller = poll::ChainPoller::new(&mut derefed, network);
-		let chain_listener = (chain_monitor_listener, channel_manager_listener);
-		let mut spv_client =
-			SpvClient::new(chain_tip.unwrap(), chain_poller, &mut cache, &chain_listener);
-		loop {
-			spv_client.poll_best_tip().await.unwrap();
-			tokio::time::sleep(Duration::from_secs(1)).await;
-		}
-	});
-    */
-
-    //channel_manager.update_best_block(info.bestblockhash, info.blocks);
-
     // Step 15
     console.log("Local Node ID is " + Buffer.from(channel_manager.get_our_node_id()).toString('hex'))
     
     channel_manager.timer_tick_occurred();
     setInterval(() => {
         console.log("Loop");
-        //console.log("timer_tick_occurred");
-    
-      //  console.log("Channel Manager Events process_pending_events");
-      //  channel_manager.as_EventsProvider().process_pending_events(event_handler);
-       // chain_monitor.as_EventsProvider().process_pending_events(event_handler);
-
-       // channel_manager.timer_tick_occurred();
-       // peer_manager.process_events();
-        //channel_manager.await_persistable_update_timeout(100);
-        //chain_monitor.as_EventsProvider().process_pending_events(event_handler);
-        //peer_manager.process_events();
-
-        //peer_manager.process_events();
-
         peer_manager.timer_tick_occurred();
         peer_manager.process_events();
-        //channel_manager.as_EventsProvider().process_pending_events(event_handler);
-        //chain_monitor.as_EventsProvider().process_pending_events(event_handler);
-        //peer_manager.process_pending_events();
-        //peer_manager.process_events();
-
+        channel_manager.as_EventsProvider().process_pending_events(event_handler);
+        chain_monitor.as_EventsProvider().process_pending_events(event_handler);
     },5000)
     
     var local = repl.start("> ");
@@ -356,15 +303,6 @@ async function start_ldk(ldk) {
     }
 
     local.context.openchannel = function(their_network_key, channel_value_satoshis, push_msat, user_channel_id, override_config) {
-       // create_channel(their_network_key, channel_value_satoshis, push_msat, user_channel_id, override_config) {
-        /*
-        * `user_channel_id` will be provided back as in
-     * [`Event::FundingGenerationReady::user_channel_id`] to allow tracking of which events
-     * correspond with which `create_channel` call. Note that the `user_channel_id` defaults to 0
-     * for inbound channels, so you may wish to avoid using 0 for `user_channel_id` here.
-     * `user_channel_id` has no meaning inside of LDK, it is simply copied to events and otherwise
-     * ignored.
-        */
         user_channel_id = BigInt(0);
         override_config = ldk.UserConfig.constructor_default();
         return channel_manager.create_channel(Buffer.from(their_network_key,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),user_channel_id,override_config);
@@ -373,6 +311,7 @@ async function start_ldk(ldk) {
     local.context.listchannels = function() {
         return channel_manager.list_channels();
     }
+
     local.context.connectpeer = function(peer) {
         socketOutboundId++;
         let peerParts = peer.split("@");
@@ -391,10 +330,6 @@ async function start_ldk(ldk) {
 			if (!res.is_ok()) descriptor.disconnect_socket();
 			else if (res.res) client.pause();
             peer_manager.process_events();
-            // // console.log("We got a chunk!", chunk.toString('hex'))
-            // peer_manager.read_event(socketInbound,chunk);
-            // channel_manager.as_EventsProvider().process_pending_events(event_handler);
-            // peer_manager.process_events();
         })
     
         client.on("close", function() {
@@ -409,7 +344,6 @@ async function start_ldk(ldk) {
             console.log('Requested an end to the TCP connection');
             peer_manager.socket_disconnected(socketOutboundId);
             peer_manager.process_events();
-           // peer_manager.timer_tick_occurred();
         });
         
         client.on('drain', function() {
@@ -430,16 +364,13 @@ async function start_ldk(ldk) {
 				return data.length;
             },
             disconnect_socket: () => {
-                client.destroy();
                 console.log('Closing socket');
+                client.destroy();
             },
             eq: (a) => {// should check if this is the same socket
-              //  console.log('EQ');
                 return a.hash() == socketOutbound.hash();
             },
             hash: (s) => {
-                //console.log("socketId", socketOutboundId)
-                //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
                 return BigInt(socketOutboundId); // using hashes results in a failure, not sure if this is max int values 
             }
         });
@@ -458,7 +389,7 @@ async function start_ldk(ldk) {
     const clientInbound = net.createServer((c) => {
         var sock_write_waiting = false;
         var socketInbound = ldk.SocketDescriptor.new_impl({
-            send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
+            send_data: (data, resume_read) => {
                 if (resume_read) c.resume();
 
 				if (sock_write_waiting) return 0;
@@ -468,22 +399,17 @@ async function start_ldk(ldk) {
             },
             disconnect_socket: () => {
                 c.destroy();
-                console.log('Closing socket');
-              //  c.close()
             },
             eq: (a) => {// should check if this is the same socket
-              // console.log('EQ');
                 return a.hash() == socketInbound.hash();
             },
             hash: (s) => {
-               // console.log("socketId", socketInboundId)
-                //var hash = "0x" + crypto.createHash('sha256').update(Math.random().toString()).digest('hex');
                 return BigInt(socketInboundId); // using hashes results in a failure, not sure if this is max int values 
             }
         });
 
         console.log('client connected');
-       // console.log(c.remoteAddress) // currently IPv6, hacking for IPv4
+
         c.on('end', () => {
             console.log('client disconnected');
         });
@@ -493,10 +419,6 @@ async function start_ldk(ldk) {
 			if (!res.is_ok()) descriptor.disconnect_socket();
 			else if (res.res) c.pause();
             peer_manager.process_events();
-            // // console.log("We got a chunk!", chunk.toString('hex'))
-            // peer_manager.read_event(socketInbound,chunk);
-            // channel_manager.as_EventsProvider().process_pending_events(event_handler);
-            // peer_manager.process_events();
         })
     
         c.on("close", function() {
@@ -511,7 +433,6 @@ async function start_ldk(ldk) {
             console.log('Requested an end to the TCP connection');
             peer_manager.socket_disconnected(socketInbound);
             peer_manager.process_events();
-           // peer_manager.timer_tick_occurred();
         });
         
         c.on('drain', function() {
@@ -534,43 +455,21 @@ async function start_ldk(ldk) {
         var inbound = peer_manager.new_inbound_connection(socketInbound, address);
 
     })
-
-   
     
     clientInbound.listen(PORT, () => {
         console.log('server bound to' , PORT);
     });
-
-    
-
 
     if (process.env.LN_REMOTE_HOST) { // Automatically connect for debugging purposes
         console.log("Automatically connect to peer")
         local.context.connectpeer(process.env.LN_REMOTE_HOST);
     }
 
-    
-
     // Requires implementing rust-lightning-invoice https://github.com/rust-bitcoin/rust-lightning-invoice/
     local.context.getinvoice = function(amt_msat,expiry_secs) { 
-
-        /*
-        inbound_payments = 
-        channel_manager, 
-        keys_manager,
-        network = ldk.Network.LDKNetwork_Testnet;
-        create_invoice_from_channelmanager(
-            channel_manager,
-		    keys_manager,
-		    currency,
-		    amt_msat,
-		    "ldk-tutorial-node",
-		    expiry_secs
-        )*/
         return channel_manager.create_inbound_payment(amt_msat,expiry_secs)
 
     }
-
 }
 
 
