@@ -103,7 +103,7 @@ async function start_ldk(ldk, NodeLDKNet) {
 
     const logger = ldk.Logger.new_impl({
         log(record) {
-            log_file.write(record.get_module_path() + ": " + record.get_args())
+            log_file.write(record.get_module_path() + ": " + record.get_args() + "\n");
         }
     });
     
