@@ -97,9 +97,13 @@ async function start_ldk(ldk, NodeLDKNet) {
     });
     
     // Step 2: Initialize the Logger
+    const log_file_path = ldk_data_dir + "/debug.log";
+
+    const log_file = fs.createWriteStream(log_file_path, {flags : 'w'});
+
     const logger = ldk.Logger.new_impl({
         log(record) {
-            console.log(record.get_module_path() + ": " + record.get_args());
+            log_file.write(record.get_module_path() + ": " + record.get_args())
         }
     });
     
