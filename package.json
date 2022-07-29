@@ -36,10 +36,8 @@
     "axios": "^0.27.2",
     "bitcoind-rpc": "^0.9.1",
     "crypto": "^1.0.1",
-    "debug": "^4.3.4",
     "dotenv": "^16.0.1",
     "dotenv-expand": "^8.0.3",
-    "lightningdevkit": "^0.0.10-9",
     "lightningdevkit-node-net": "^0.0.11-0.0-1-ga622cc26-dirty",
     "socket.io": "^4.5.1",
     "socket.io-client": "^4.5.1"

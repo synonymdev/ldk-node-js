@@ -1,7 +1,6 @@
 const fs = require("fs")
 const dotenv = require("dotenv").config();
 const dotenvexpand = require("dotenv-expand").expand(dotenv);
-const debug = require('debug')('lightninglog')
 const repl = require("repl");
 const crypto = require("crypto");
 const axios = require("axios");
@@ -9,6 +8,7 @@ const axios = require("axios");
 const USER = process.env.BITCOIN_USER;
 const PASS = process.env.BITCOIN_PASS;
 const HOST = process.env.BITCOIN_CORS_RPC_URL;
+const NETWORK_INTERFACE = process.env.NETWORK_INTERFACE;
 const PORT = process.env.PORT;
 
 // ✅ Step 1: Initialize the FeeEstimator
@@ -242,7 +242,6 @@ async function start_ldk(ldk, NodeLDKNet) {
     
     channel_manager.timer_tick_occurred();
     setInterval(() => {
-        debug("Loop");
         peer_manager.timer_tick_occurred();
         peer_manager.process_events();
         channel_manager.as_EventsProvider().process_pending_events(event_handler);
@@ -324,7 +323,7 @@ async function start_ldk(ldk, NodeLDKNet) {
     }
 
     const net_handler = new NodeLDKNet(peer_manager);    
-    await net_handler.bind_listener("127.0.0.1", PORT);
+    await net_handler.bind_listener(NETWORK_INTERFACE, PORT);
 
     if (process.env.LN_REMOTE_HOST) { // Automatically connect for debugging purposes
         console.log("Automatically connect to peer")
