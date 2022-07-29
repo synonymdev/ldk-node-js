@@ -1,20 +1,16 @@
 const fs = require("fs")
 const dotenv = require("dotenv").config();
 const dotenvexpand = require("dotenv-expand").expand(dotenv);
-const debug = require('debug')('network')
+const debug = require('debug')('lightninglog')
 const repl = require("repl");
 const crypto = require("crypto");
 const axios = require("axios");
-const net = require("net");
-const { connect_outbound, setup_inbound, setup_outbound } = require("./utils/ln_net");
-const { syncBuiltinESMExports } = require("module");
+
 const USER = process.env.BITCOIN_USER;
 const PASS = process.env.BITCOIN_PASS;
 const HOST = process.env.BITCOIN_CORS_RPC_URL;
 const PORT = process.env.PORT;
-var socketInboundId = 0; // eventually to be replaced by a hash function
-var socketOutboundId = 0; // eventually to be replaced by a hash function
-debug('booting %o', "a");
+
 // ✅ Step 1: Initialize the FeeEstimator
 // ✅ Step 2: Initialize the Logger
 // ✅ Step 3: Initialize the BroadcasterInterface
@@ -63,7 +59,7 @@ function toHexString(byteArray) {
 }
 
  
-async function start_ldk(ldk) {
+async function start_ldk(ldk, NodeLDKNet) {
     var info = await rpcclient("getblockchaininfo",[]);
     console.log("Connected to Bitcoin backend: ", info.chain)
     console.log('LDK startup successful. To view available commands: "help".');
@@ -81,17 +77,17 @@ async function start_ldk(ldk) {
             case ldk.ConfirmationTarget.LDKConfirmationTarget_Background:
                 // insert code to retireve a background feerate
                 //return rpc.estimateSmartFee(6, console.log)
-                console.log("LDKConfirmationTarget_Background");
+                //console.log("LDKConfirmationTarget_Background");
                 return 1;
                 break;
             case ldk.ConfirmationTarget.LDKConfirmationTarget_Normal:
                 // <insert code to retrieve a normal (i.e. within ~6 blocks) feerate>
-                console.log("LDKConfirmationTarget_Normal");
+                //console.log("LDKConfirmationTarget_Normal");
                 return 5000;
                 break;
             case ldk.ConfirmationTarget.LDKConfirmationTarget_HighPriority:
                 // <insert code to retrieve a high-priority feerate>
-                console.log("LDKConfirmationTarget_HighPriority");
+                //console.log("LDKConfirmationTarget_HighPriority");
                 return 10000;
                 break;
             default:
@@ -242,7 +238,7 @@ async function start_ldk(ldk) {
     
     channel_manager.timer_tick_occurred();
     setInterval(() => {
-        console.log("Loop");
+        debug("Loop");
         peer_manager.timer_tick_occurred();
         peer_manager.process_events();
         channel_manager.as_EventsProvider().process_pending_events(event_handler);
@@ -312,153 +308,19 @@ async function start_ldk(ldk) {
         return channel_manager.list_channels();
     }
 
-    local.context.connectpeer = function(peer) {
-        socketOutboundId++;
+    local.context.connectpeer = async function(peer) {
         let peerParts = peer.split("@");
         var config = {
             host: peerParts[1].split(":")[0],
             port: parseInt(peerParts[1].split(":")[1])
         };
-
-        const client = new net.Socket();
-        client.on('end', () => {
-            console.log('client disconnected');
-        });
-
-        client.on('data', (chunk) => {
-            res = peer_manager.read_event(socketOutbound,chunk);
-			if (!res.is_ok()) descriptor.disconnect_socket();
-			else if (res.res) client.pause();
-            peer_manager.process_events();
-        })
-    
-        client.on("close", function() {
-			peer_manager.socket_disconnected(socketOutboundId);
-		});
-
-        client.on('error', (err) => {
-            throw err;
-        });
-
-        client.on('end', function() {
-            console.log('Requested an end to the TCP connection');
-            peer_manager.socket_disconnected(socketOutboundId);
-            peer_manager.process_events();
-        });
         
-        client.on('drain', function() {
-            if (sock_write_waiting) {
-				if (!this_pm.write_buffer_space_avail(descriptor).is_ok()) {
-					descriptor.disconnect_socket();
-				}
-			}
-        });
-        var sock_write_waiting = false;
-        var socketOutbound = ldk.SocketDescriptor.new_impl({
-            send_data: (data, resume_read) => {// currently does not handle large data streams, just tyring to get it to handshake with a peer
-                if (resume_read) client.resume();
-
-				if (sock_write_waiting) return 0;
-				const written = client.write(data);
-				if (!written) sock_write_waiting = true;
-				return data.length;
-            },
-            disconnect_socket: () => {
-                console.log('Closing socket');
-                client.destroy();
-            },
-            eq: (a) => {// should check if this is the same socket
-                return a.hash() == socketOutbound.hash();
-            },
-            hash: (s) => {
-                return BigInt(socketOutboundId); // using hashes results in a failure, not sure if this is max int values 
-            }
-        });
-
-        client.connect(config, function() {
-            client.setTimeout(1000);
-            console.log('TCP connection established.');
-            var addy = Uint8Array.from([127,0,0,1]);
-            var address = ldk.NetAddress.constructor_ipv4(addy,config.port);
-            console.log(address)
-            var outbound = peer_manager.new_outbound_connection(Buffer.from(peerParts[0], 'hex'), socketOutbound, address);
-            socketOutbound.send_data(outbound.res, true);  
-        });        
+        const net_handler = new NodeLDKNet(peer_manager);
+        await net_handler.connect_peer(config.host, config.port, Buffer.from(peerParts[0], 'hex'));        
     }
 
-    const clientInbound = net.createServer((c) => {
-        var sock_write_waiting = false;
-        var socketInbound = ldk.SocketDescriptor.new_impl({
-            send_data: (data, resume_read) => {
-                if (resume_read) c.resume();
-
-				if (sock_write_waiting) return 0;
-				const written = c.write(data);
-				if (!written) sock_write_waiting = true;
-				return data.length;
-            },
-            disconnect_socket: () => {
-                c.destroy();
-            },
-            eq: (a) => {// should check if this is the same socket
-                return a.hash() == socketInbound.hash();
-            },
-            hash: (s) => {
-                return BigInt(socketInboundId); // using hashes results in a failure, not sure if this is max int values 
-            }
-        });
-
-        console.log('client connected');
-
-        c.on('end', () => {
-            console.log('client disconnected');
-        });
-
-        c.on('data', (chunk) => {
-            res = peer_manager.read_event(socketInbound,chunk);
-			if (!res.is_ok()) descriptor.disconnect_socket();
-			else if (res.res) c.pause();
-            peer_manager.process_events();
-        })
-    
-        c.on("close", function() {
-			peer_manager.socket_disconnected(socketInbound);
-		});
-
-        c.on('error', (err) => {
-            throw err;
-        });
-
-        c.on('end', function() {
-            console.log('Requested an end to the TCP connection');
-            peer_manager.socket_disconnected(socketInbound);
-            peer_manager.process_events();
-        });
-        
-        c.on('drain', function() {
-            if (sock_write_waiting) {
-				if (!this_pm.write_buffer_space_avail(descriptor).is_ok()) {
-					descriptor.disconnect_socket();
-				}
-			}
-        });
-        
-        c.on('timeout', function() {
-            peer_manager.socket_disconnected(socketInbound);
-            peer_manager.process_events();
-            console.log("timeout!");
-        });
-
-        var addy = Uint8Array.from([127,0,0,1]);
-        var address = ldk.NetAddress.constructor_ipv4(addy,config.port);
-        console.log("Inbound")
-        var inbound = peer_manager.new_inbound_connection(socketInbound, address);
-
-    })
-    
-    clientInbound.listen(PORT, () => {
-        console.log('server bound to' , PORT);
-    });
+    const net_handler = new NodeLDKNet(peer_manager);    
+    await net_handler.bind_listener("127.0.0.1", PORT);
 
     if (process.env.LN_REMOTE_HOST) { // Automatically connect for debugging purposes
         console.log("Automatically connect to peer")
@@ -472,17 +334,20 @@ async function start_ldk(ldk) {
     }
 }
 
-
-import("lightningdevkit").then(ldk =>  {
+/*
+Using sub lightningdevkit lib due to initializeWasm issues 
+*/
+import("./node_modules/lightningdevkit-node-net/node_modules/lightningdevkit/index.mjs").then(ldk =>  {
     const compileWasm = (pathToWasm) => {
         const bytes = fs.readFileSync( pathToWasm)
         ldk
             .initializeWasmFromBinary(bytes)
             .then(async (ff) => {
-                start_ldk(ldk);
+                const { NodeLDKNet } = await import('lightningdevkit-node-net');
+                start_ldk(ldk, NodeLDKNet);
             })
       };
       
-      compileWasm("./node_modules/lightningdevkit/liblightningjs.wasm");
+      compileWasm("./node_modules/lightningdevkit-node-net/node_modules/lightningdevkit/liblightningjs.wasm");
 })
 
