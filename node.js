@@ -247,6 +247,10 @@ async function start_ldk(ldk, NodeLDKNet) {
         channel_manager.as_EventsProvider().process_pending_events(event_handler);
         chain_monitor.as_EventsProvider().process_pending_events(event_handler);
     },5000)
+
+    const net_handler = new NodeLDKNet(peer_manager);    
+    await net_handler.bind_listener(NETWORK_INTERFACE, PORT);
+    console.log("Listening on " ,  Buffer.from(channel_manager.get_our_node_id()).toString('hex') + "@" + NETWORK_INTERFACE + ":" + PORT );
     
     var local = repl.start("> ");
     local.context.ldk = ldk
@@ -322,8 +326,6 @@ async function start_ldk(ldk, NodeLDKNet) {
         await net_handler.connect_peer(config.host, config.port, Buffer.from(peerParts[0], 'hex'));        
     }
 
-    const net_handler = new NodeLDKNet(peer_manager);    
-    await net_handler.bind_listener(NETWORK_INTERFACE, PORT);
 
     if (process.env.LN_REMOTE_HOST) { // Automatically connect for debugging purposes
         console.log("Automatically connect to peer")
