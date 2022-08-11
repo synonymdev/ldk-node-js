@@ -4,6 +4,8 @@ const dotenvexpand = require("dotenv-expand").expand(dotenv);
 const repl = require("repl");
 const crypto = require("crypto");
 const axios = require("axios");
+var forge = require("node-forge");
+const DHT = require("@hyperswarm/dht");
 
 const USER = process.env.BITCOIN_USER;
 const PASS = process.env.BITCOIN_PASS;
@@ -59,7 +61,7 @@ function toHexString(byteArray) {
 }
 
  
-async function start_ldk(ldk, NodeLDKNet) {
+async function start_ldk(ldk, NodeLDKNet, DHTHASH) {
     var info = await rpcclient("getblockchaininfo",[]);
     console.log("Connected to Bitcoin backend: ", info.chain)
     console.log('LDK startup successful. To view available commands: "help".');
@@ -251,7 +253,8 @@ async function start_ldk(ldk, NodeLDKNet) {
     const net_handler = new NodeLDKNet(peer_manager);    
     await net_handler.bind_listener(NETWORK_INTERFACE, PORT);
     console.log("Listening on " ,  Buffer.from(channel_manager.get_our_node_id()).toString('hex') + "@" + NETWORK_INTERFACE + ":" + PORT );
-    
+    console.log("Listening on HYPER" ,  Buffer.from(channel_manager.get_our_node_id()).toString('hex') + "@" + DHTHASH + ":" + PORT );
+
     var local = repl.start("> ");
     local.context.ldk = ldk
     local.context.persister = persister;
@@ -323,7 +326,28 @@ async function start_ldk(ldk, NodeLDKNet) {
         };
         
         const net_handler = new NodeLDKNet(peer_manager);
+        console.log("params: ", config.host, config.port, Buffer.from(peerParts[0], 'hex'));
         await net_handler.connect_peer(config.host, config.port, Buffer.from(peerParts[0], 'hex'));        
+    }
+
+    local.context.connecthyperpeer = function(peer) {
+        const dht = new DHT();
+        let peerParts = peer.split("@");
+        console.log("Trying", peerParts)
+
+        const socket = dht.connect(Buffer.from(peerParts[1].split(":")[0],'hex'));
+
+        socket.once('open', async () => {
+            var config = {
+                host: socket.rawStream.remoteHost,
+                hyperport: socket.rawStream.remotePort,
+                port: parseInt(peerParts[1].split(":")[1])
+            };
+            console.log(config);
+            const net_handler = new NodeLDKNet(peer_manager);
+            console.log("params: ", config.host, config.port, Buffer.from(peerParts[0], 'hex'));
+            await net_handler.connect_peer(config.host, config.port, Buffer.from(peerParts[0], 'hex'));
+        });
     }
 
 
@@ -348,8 +372,13 @@ import("./node_modules/lightningdevkit-node-net/node_modules/lightningdevkit/ind
         ldk
             .initializeWasmFromBinary(bytes)
             .then(async (ff) => {
-                const { NodeLDKNet } = await import('lightningdevkit-node-net');
-                start_ldk(ldk, NodeLDKNet);
+                const { NodeLDKNet } = await import('lightningdevkit-node-net');            
+                const server = new DHT().createServer();
+                await server.listen();
+                const DHTHASH = forge.util.binary.base58.encode(server.address().publicKey);
+                console.log("DHT Address (Not the same Curve 😭 )",server.address().publicKey.toString('hex'), DHTHASH);
+
+                start_ldk(ldk, NodeLDKNet, server.address().publicKey.toString('hex'));
             })
       };
       
