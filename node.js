@@ -149,12 +149,11 @@ async function start_ldk(ldk, NodeLDKNet) {
     const config = ldk.UserConfig.constructor_default();
     
     const ChannelHandshakeConfig = ldk.ChannelHandshakeConfig.constructor_default();
-    ChannelHandshakeConfig.set_announced_channel(true);
-    config.set_channel_handshake_config(ChannelHandshakeConfig)
-    console.log("Setting up new node at ", info.bestblockhash, info.blocks);
+    //ChannelHandshakeConfig.set_announced_channel(true);
+    //config.set_channel_handshake_config(ChannelHandshakeConfig)
+    //console.log("Setting up new node at ", info.bestblockhash, info.blocks);
 
     const params = ldk.ChainParameters.constructor_new(ldk.Network.LDKNetwork_Regtest, ldk.BestBlock.constructor_new(Buffer.from(info.bestblockhash,'hex'),info.blocks));
-
 
 
     // Step 7: Read ChannelMonitor state from disk
@@ -216,21 +215,25 @@ async function start_ldk(ldk, NodeLDKNet) {
     let event_handler = ldk.EventHandler.new_impl({
         handle_event: function(e) {
             console.log(">>>>>>> Handling Event here <<<<<<<", e)
-          if (e instanceof Event.FundingGenerationReady) {
+          if (e instanceof ldk.Event_FundingGenerationReady) {
+            //console.log(e)
+            var final_tx = 0;
+            console.log(e.temporary_channel_id, e.counterparty_node_id, final_tx)
+            //channel_manager.funding_transaction_generated(e.temporary_channel_id, e.counterparty_node_id, final_tx);
             // <insert code to handle this event>
-          } else if (e instanceof Event.PaymentReceived) {
+          } else if (e instanceof Event.Event_PaymentReceived) {
             // <insert code to handle this event>
-          } else if (e instanceof Event.PaymentSent) {
+          } else if (e instanceof Event.Event_PaymentSent) {
             // <insert code to handle this event>
-          } else if (e instanceof Event.PaymentPathFailed) {
+          } else if (e instanceof Event.Event_PaymentPathFailed) {
             // <insert code to handle this event>
-          } else if (e instanceof Event.PendingHTLCsForwardable) {
+          } else if (e instanceof Event.Event_PendingHTLCsForwardable) {
             // <insert code to handle this event>
-          } else if (e instanceof Event.SpendableOutputs) {
+          } else if (e instanceof Event.Event_SpendableOutputs) {
             // <insert code to handle this event>
-          } else if (e instanceof Event.PaymentForwarded) {
+          } else if (e instanceof Event.Event_PaymentForwarded) {
             // <insert code to handle this event>
-          } else if (e instanceof Event.ChannelClosed) {
+          } else if (e instanceof Event.Event_ChannelClosed) {
             // <insert code to handle this event>
           }
         }
@@ -305,14 +308,43 @@ async function start_ldk(ldk, NodeLDKNet) {
         //ldk.util
     }
 
-    local.context.openchannel = function(their_network_key, channel_value_satoshis, push_msat, user_channel_id, override_config) {
+    local.context.openchannel = function(peer, channel_value_satoshis, push_msat, user_channel_id, override_config) {
         user_channel_id = BigInt(0);
         override_config = ldk.UserConfig.constructor_default();
-        return channel_manager.create_channel(Buffer.from(their_network_key,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),user_channel_id,override_config);
+
+        //connect_peer_if_necessary
+        let peerParts = peer.split("@");
+        var config = {
+            pubkey: peerParts[0],
+            host: peerParts[1].split(":")[0],
+            port: parseInt(peerParts[1].split(":")[1])
+        };
+        if (!peer_manager.get_peer_node_ids().includes(config.pubkey)) {
+            console.log("Connecting to " ,config )
+            const net_handler = new NodeLDKNet(peer_manager);
+            net_handler.connect_peer(config.host, config.port, Buffer.from(config.pubkey, 'hex')).then(() => {
+                return channel_manager.create_channel(Buffer.from(peer,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),user_channel_id,override_config);        
+            })
+        } else {
+            return channel_manager.create_channel(Buffer.from(peer,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),user_channel_id,override_config);
+        }
     }
 
     local.context.listchannels = function() {
-        return channel_manager.list_channels();
+        var channelArr = [];
+        channel_manager.list_channels().forEach((ChannelDetails) => {
+            channelArr.push({
+                channel_id: toHexString(ChannelDetails.get_channel_id()),
+                funding_txid: toHexString(ChannelDetails.get_funding_txo().get_txid()),
+                peer_pubkey: toHexString(ChannelDetails.get_counterparty().get_node_id()),
+                is_channel_ready: Boolean(ChannelDetails.get_is_channel_ready()),
+                channel_value_satoshis: ChannelDetails.get_channel_value_satoshis(),
+                local_balance_msat: ChannelDetails.get_balance_msat(),
+                channel_can_send_payments: Boolean(ChannelDetails.get_is_usable()),
+                public: Boolean(ChannelDetails.get_is_public())
+            })
+        })
+        return channelArr;
     }
 
     local.context.connectpeer = async function(peer) {
