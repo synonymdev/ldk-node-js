@@ -249,7 +249,7 @@ async function start_ldk(ldk, NodeLDKNet) {
         peer_manager.process_events();
         channel_manager.as_EventsProvider().process_pending_events(event_handler);
         chain_monitor.as_EventsProvider().process_pending_events(event_handler);
-    },5000)
+    },2000)
 
     const net_handler = new NodeLDKNet(peer_manager);    
     await net_handler.bind_listener(NETWORK_INTERFACE, PORT);
@@ -319,13 +319,17 @@ async function start_ldk(ldk, NodeLDKNet) {
             host: peerParts[1].split(":")[0],
             port: parseInt(peerParts[1].split(":")[1])
         };
-        if (!peer_manager.get_peer_node_ids().includes(config.pubkey)) {
+
+        var peers = peer_manager.get_peer_node_ids().map((item) => toHexString(item));
+        console.log("needle", peers, config.pubkey)
+        if (!peers.includes(config.pubkey)) {
             console.log("Connecting to " ,config )
             const net_handler = new NodeLDKNet(peer_manager);
             net_handler.connect_peer(config.host, config.port, Buffer.from(config.pubkey, 'hex')).then(() => {
                 return channel_manager.create_channel(Buffer.from(peer,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),user_channel_id,override_config);        
             })
         } else {
+            console.log(Buffer.from(peer,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),BigInt(user_channel_id),override_config)
             return channel_manager.create_channel(Buffer.from(peer,'hex'), BigInt(channel_value_satoshis), BigInt(push_msat),user_channel_id,override_config);
         }
     }
