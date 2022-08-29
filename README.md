@@ -22,6 +22,14 @@ npm run test
 
 ## Running Node REPL
 
+Ensure the following are in your environment...
+
+* BITCOIN_USER - username for Bitcoin RPC
+* BITCOIN_PASS - password for Bitcoin RPC
+* BITCOIN_CORS_RPC_URL - URL of RPC endpoint on bitcoin node
+* NETWORK_INTERFACE - address to bind to (listening)
+* PORT - port to listen on
+
 ```
 npm run start-node
 ```
